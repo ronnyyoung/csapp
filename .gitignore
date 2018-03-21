@@ -1,0 +1,8 @@
+build
+cmake-build*
+*.swp
+*~
+*.[o]
+*.tar
+*.bin
+*.idea/

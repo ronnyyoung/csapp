@@ -1,0 +1,6 @@
+file(GLOB demos *.c *.cpp)
+message(STATUS ${demos})
+foreach(demo ${demos})
+    get_filename_component(name ${demo} NAME_WE)
+    add_executable(${name} ${demo})
+endforeach()
