@@ -111,8 +111,8 @@ ROI(Robust I/O)是一个健壮的I/O包，它会自动为我们处理`read`和`w
 ssize_t rio_readn(int fd, void *usrbuf, size_t n);
 ssize_t rio_writen(int fd, void *usrbuf, size_t n);
 ```
-- [roi_readn](../csapp.c#738)：从文件描述符fd的当前文件位置最多传送n个字节到内存位置usrbuf, 除了读文件时遇到EOF，会返回一个不足值，其他情况下均不会。
-- [roi_writen](../csapp.c#764)：从内存位置usrbuf传送n个字节到描述符fd，决不会返回不足值。
+- [roi_readn](../csapp.c#L738)：从文件描述符fd的当前文件位置最多传送n个字节到内存位置usrbuf, 除了读文件时遇到EOF，会返回一个不足值，其他情况下均不会。
+- [roi_writen](../csapp.c#L764)：从内存位置usrbuf传送n个字节到描述符fd，决不会返回不足值。
 
 两者若在读写时，出错，则均返回-1。
 
@@ -134,8 +134,8 @@ ssize_t	rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen);
 
 为什么要带缓冲区：假设我们要编写一个程序来计算文本文件行的数量，该如何实现呢？一种方法就是用read函数来一次一个字节地从文件传送到用户内在，检查每个字节来查找换行符。这个方法的缺点就是效率不高，每读取文件中的一个字节都要陷入内核。另外一个方法，就是我们一次从文件中读取一个固定大小（BUF_SIZE）的字符，然后再从这个buffer里一个一个的读取字符进行判断是否是换行符，当这个buffer被处理完后，我们再从文件中读取BUF_SIZE个字节到buffer中。
 
-后面一种处理方法就是带缓冲的输入，[roi_readnb](../csapp.c#838)就是一个这样的带缓冲区的版本。如果我们处理的是文本，一次需要读取一行，那可以直接使用[roi_readlineb](../csapp.c#860)。它从一个内部缓冲区中一次复制一行，当缓冲区变空时，内部会自动的调用read进行重填。
+后面一种处理方法就是带缓冲的输入，[roi_readnb](../csapp.c#L838)就是一个这样的带缓冲区的版本。如果我们处理的是文本，一次需要读取一行，那可以直接使用[roi_readlineb](../csapp.c#L860)。它从一个内部缓冲区中一次复制一行，当缓冲区变空时，内部会自动的调用read进行重填。
 
-调用带缓冲区的读函数时，我们需要先调用[roi_readinitb](../csapp.c#826)来将一个缓冲区与一个文件描述符进行绑定。
+调用带缓冲区的读函数时，我们需要先调用[roi_readinitb](../csapp.c#L826)来将一个缓冲区与一个文件描述符进行绑定。
 
 
