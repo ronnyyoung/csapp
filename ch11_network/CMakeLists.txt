@@ -1,0 +1,6 @@
+file(GLOB demos *.c *.cpp)
+foreach(demo ${demos})
+    get_filename_component(name ${demo} NAME_WE)
+    add_executable(${name} ${demo} ../csapp.c)
+    target_link_libraries(${name} pthread)
+endforeach()
