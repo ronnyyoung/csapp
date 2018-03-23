@@ -99,7 +99,15 @@ struct in_addr {
 ```
 把它包装成一个结构体，是早期实现不幸的产物，现在改过来已经太迟了。
 
-不同的主机因为架构的不同，往往有着不同的主机字节顺序，TCP/IP为了任意整数数据项定义了统一的网络字节顺序，也就是大端字节顺序。所以当IP地址放在数据包中时，以是大端法的网络字节序存放的，即使主机字节顺序是小端法。 我们可以使用下面的函数在网络和主机字节顺序之间实现转换。
+不同的主机因为架构的不同，往往有着不同的主机字节顺序，我们平时用的主机大多是Intel架构，一般都是小端表示法。TCP/IP为了任意整数数据项定义了统一的网络字节顺序，也就是大端字节顺序。所以当IP地址放在数据包中时，以是大端法的网络字节序存放的，即使主机字节顺序是小端法。 
+
+假设变量`x`的类型为`int`，位于地址0x100处，它的十六进制值为0x01234567。地址范围0x100~0x103的字节顺序在大端法机器与小端法机器上表现如下：
+
+![](./images/ch11_06.png)
+
+从上图可以看出来，小端表示法符合直觉，也就是数的高有效位存在高地址。
+
+我们可以使用下面的函数在网络和主机字节顺序之间实现转换。
 
 ```cpp
 #include <netinet/in.h>
@@ -112,13 +120,48 @@ unsigned short int ntohs(unsigned short int netshort);
 
 另外linux还提供了一组函数方便，我们将一个32位的ip地址转换为一个点分十进制表示的字符串。
 ```cpp
-///@brief 字符串格式转换为ip地址
+///@brief 字符串格式转换为二进制的网络字节序ip地址
 ///@return 若成功，则返回1，若src为非法点十进制地址，则返回0，若出错则为-1
 #include <arpa/inet.h> 
 int inet_pton(AF_INET, const char *src, void *dst); 
-///@brief ip地址转换为字符串，并把结果的最多size的字节复制到dst中
+///@brief 二进制的网络字节序ip地址转换为字符串，并把结果的最多size的字节复制到dst中
 ///@return 若成功，则指向点分十进制字符串的指针，若出错则为NULL
 char *inet_ntop(AF_INET, const void*src, char *dst, socklen_t size);
 ```
 
+我们可以借助上面的函数，我们实现以下程序，将从命令行读往个十六进制的ip地址，转换为点分址进制的可读格式。
+
+```cpp
+#include <cstdio>
+#include <iostream>
+#include <arpa/inet.h>
+
+int main(int argc, char *argv[]) {
+    uint32_t ip;
+    sscanf(argv[1], "%x", &ip);     /*按十六进制读入一个ip地址*/
+    uint32_t ip_net = htonl(ip);    /*将这个ip地址由主机字节序转化为网络字节序*/
+
+
+    char ip_string[32];
+    inet_ntop(AF_INET, &ip_net, ip_string, 32); /*将网络字节序的ip地址，转换为字符串格式*/
+
+    std::cout << ip_string << std::endl;
+
+    return 0;
+};
+```
+
 ## 3.2 域名解析
+
+Internet中标记主机用的都是IP地址，但大量的IP地址对人来说是很难记忆的，所以Internet上有一个分布式的数据库建立了IP地址与其助记符（域名）之间的映射关系。这个分布式的数据据就是域名解析系统（DNS)。
+
+这些域名是一串用句点分割的单词（字母、数字和破折号），例如`www.baidu.com`。
+
+这个分布式的域名数据库是一个分层的结构，最上一层是未命名的根，然后是第一层域名，一般是`.com`,`.cn`这样的一级域名。下一层是二级域名，例如:`baidu.com`。
+
+我们可以使用Linux上的`nslook`命令来查看一个域名，它对应的ip地址。一个域名可能对应一个或多个ip地址。
+
+![](./images/ch11_07.png)
+
+域名解析实际是一个网络核心的功能，但确使用了应用层的协议。域名解析在传输层一般会选择UDP协议。域名解析的详细过程可以阅读[从输入url到页面展示到底发生了什么](https://www.cnblogs.com/xianyulaodi/p/6547807.html)。
+
