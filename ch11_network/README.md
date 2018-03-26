@@ -277,3 +277,51 @@ int getnameinfo(const struct sockaddr *sa, socklen_t salen,
                 char *service, size_t servlen, int flags);
 ```
 
+# 5. Web服务器
+
+这一小节，我们将利用前面学习到的网络编程的知识，客户端-服务器模型，SocketAPI来实现一个功能齐全的Web服务器。
+
+## 5.1 Web基础
+
+Web客户端与服务器之间的通信规则是通过一个叫HTTP的协议进行约束的，HTTP是一种简单的应用层协议，中文翻译为超文本传输协议（Hypertext Transfer Protocol）。Web客户端一般是一个浏览器，浏览器通过网址连接到服务器，并请求一些内容。Web服务器响应这些请求的内容，并发送给客户端，浏览器接收到内容后，渲染显示出来。
+
+Web应用中，Web客户端请求的文件与一般的文件有什么区别呢（Web与FTP的区别），Web的内容可以用一种叫HTML的语言来编写。它是可以将文本、图片、超链接整合在一起的一种标记语言。
+
+## 5.2 Web内容
+
+Web客户端与服务器之间进行交换的数据内容是一个MIME（Multipurpose Internet Mail Extensions）类型的字节序列，一些常见的MIME类型文件有：
+
+MIME类型|描述
+---|---
+text/html|HTML页面
+text/plain|无格式文本
+application/postscript|Postscript文档
+image/git|GIF格式编码的二进制图像
+image/png|PNG格式编码的二进制图像
+image/jpeg|JPEG格式编码的二进制图像
+
+Web服务器以两种不同的方式向客户提供内容：
+- 取一个磁盘文件，并将它的内容返回给客户端。硬盘文件称为静态内容，而返回文件给客户端的过程称为服务静态内容。
+- 运行一个可执行文件，并将它的输出返回给客户端。运行时可执行文件产生的输出称为动态内容，而运行程序并返回它的输出到客户端的过程称为服务动态内容。
+
+
+无论是磁盘文件还是可执行文件，在服务器中都一个唯一的名字，叫URL(通用资源定位符)。比如`http://www.google.com:80/index.html`。就是访问服务器`www.google.com`上一个称为`/index.html`的HTML文件，它是由一个监听端口80的Web服务器管理的。
+
+服务器怎么识别是请求一个文件，还是请求运行可执行程序没有明确的规定，一般服务器通过一些默认路径来将两种服务分开，比如/html目录下存放的都是文件，/bin/下存的都是可执行程序。
+
+最小的URL后缀是“/”字符，所有服务器将其护展为某个默认的主页，例如`/index.html`或`/default.html`。当我们在浏览器中用`www.google.com`访问时，浏览器用自动扩展为`www.google.com/`，服务器会进一步扩展为`www.google.com/index.html`
+
+
+## 5.3 HTTP协议
+
+### 请求
+
+
+### 响应
+
+
+
+
+
+
+
