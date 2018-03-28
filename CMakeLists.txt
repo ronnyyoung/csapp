@@ -3,3 +3,4 @@ project(csapp C CXX)
 
 add_subdirectory(ch10_unix_io)
 add_subdirectory(ch11_network)
+add_subdirectory(ch12_concurrency)
