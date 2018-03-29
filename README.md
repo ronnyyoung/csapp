@@ -6,4 +6,4 @@
 
 - [第10章 系统级I/O](ch10_unix_io/README.md)
 - [第11章 网络编程](ch11_network/README.md)
-- [第12章 并发编程](ch12_concurrent/README.md)
+- [第12章 并发编程](ch12_concurrency/README.md)

@@ -79,4 +79,165 @@ int main(int argc, char *argv[]) {
 
 操作系统为我们提供了非阻塞的I/O模型，通过调用fcntl（POSIX）或ioctl（UNix)设为非阻塞模式，这时，当我们调用read时，如果有数据收到，就返回数据，如果没有数据收到，就立即返回一个错误。
 
-这样我们就可以在`read`返回错误后，去处理其他的连接请求了。所以我们的直观想法是，我们可以同时建立起多个与客户端的连接，然后循环的调用`read`来检查当前的连接有没有要处理的消息，有就处理，没有就返回。
+这样我们就可以在`read`返回错误后，去处理其他的连接请求了。所以我们的直观想法是，我们可以同时建立起多个与客户端的连接，建立起来一个连接描述符集合，然后循环的调用`read`来检查当前的连接有没有要处理的消息，有就处理，没有就返回。
+
+但上面的想法存在的问题是，我们要不断的轮询。操作系统给我们提供了一些便利用的函数帮我们来处理这些复杂的流程。
+
+逻辑上，我们将描述符集合看成一个大小为n的位向量：$b_{n-1},\cdots,b_1,b_0$。每个位$b_k$对应于描述符$k$。当且仅当$b_k=1$时，描述符k才表明是在描述符集合中的。
+
+对于`fd_set`类型的对象，只能对其做下面三件事：
+1. 分配它们
+2. 将一个此种类型的变量赋值给另一个变量。
+3. 用`FD_ZERO/FD_SET/FD_CLR/FD_ISSET`宏来修改它们。
+
+```cpp
+#include <sys/select.h>
+
+/// @breif 等待一组描述符准备好读
+/// @param[in] n 描述符集合的大小
+/// @param[in] fdset 描述符集合
+/// @return 返回准备好的描述符的个数
+int select(int n, fd_set *fdset, NULL, NULL, NULL);
+
+FD_ZERO(fd_set *fdset);                 // 清空描述符集合中所有的位
+FD_CLR(int fd, fd_set *fdset);          // 将fd从描述符集合中去除
+FD_SET(int fd, fd_set *fdset);          // 将fd添加到描述符集合中
+FD_ISSET(int fd, fd_set *fdset);        // 判断fd是否在描述符集合中
+```
+`select`函数会一直阻塞，直到读集合(fdset)中至少有一个描述符准备好可以读。描述符可读取意思是从该描述符中可以读取到字节，不会阻塞（阻塞式IO）或返回错误（非阻塞式IO）。
+
+`select`有个副作用，会它修改传进去的fdset，修改后的fdset指明了一个准备好的集合，这个集合则由读集合中准备好的描述符组成的。所以每次我们调用`select`都传入一个读集合的副本。
+
+## 2.1 基于I/O多路复用的并发事件驱动服务器
+
+按我们上面讨论的思想，服务端在为一个客户端连接服务时，会有消息来回的交互，我们希望利用这个交互之间的空间。那么我们并发行为的最小粒度就是，服务端响应客户端一次消息。对于echo服务器来说，就是一次每次只读取一行消息，并写回客户端，然后就再去处理其他已经准备好的描述符。
+
+```cpp
+typedef struct {
+    int maxfd;
+    fd_set read_set;
+    fd_set ready_set;
+    int nready;
+    int maxi;
+    int clientfd[FD_SETSIZE];
+    rio_t clientrio[FD_SETSIZE];
+} pool;
+```
+1. 我们需要维护一个客户端连接描述符池子，每次有一个新的客户端连接时，就需要加到池子中，当服务完这个客户端时，就把它的描述符从池子中删除。`int clientfd[FD_SETSIZE]`
+2. 一个读集合：`fd_set read_set`。
+3. 一个准备好可读集合：`fd_set ready_set`，它在调用`select`前是读集合的副本，调用后，就返回的是就绪的描述符集合。
+4. `int maxfd`指明了现在读集合中最大的描述符，也就是`select`的第一个参数，它通过与每次建立新的客户端连接返回的已连接描述符connfd比较。
+5. `int maxi`指明了客户端已连接描述符池子(`clientfd[]`)中，最大的序号。避免，每次需要检测`clientfd[]`中的每个元素。
+6. `select`返回的准备好集合中，可能有多个准备好读的描述符，用`nready`来计数。
+
+开始时，我们需要初这个pool进行初始化。注意开始时，我们已经有监听描述符了，我们需要把它加到读集合，用来监听新的客户端连接请求。
+```cpp
+void init_pool(int listenfd, pool* p) {
+    p->maxi = -1;
+    // 将开始时每个客户端连接描述符设置为-1,表示客户端连接池子为空
+    for (int i = 0; i < FD_SETSIZE; i++) {
+        p->clientfd[i] = -1;
+    }
+    p->maxfd = listenfd;
+    FD_ZERO(&p->read_set);
+    FD_SET(listenfd, &p->read_set);
+}
+```
+
+当我们调用`select`，发现`listenfd`描述符有响应时，说明是新的客户端连接，这时，我们需要将新的客户端连接描述符加到池子中。
+
+```cpp
+void add_client(int connfd, pool *p) {
+    p->nready--; // 因为已经把Listenfd的响应处理掉了。
+    for (int i = 0; i < FD_SETSIZE; i++) {
+        // 从头开始，找到一个空的slot来存放新的connfd
+        if (p->clientfd[i] >=0 ) {
+            continue;
+        }
+        p->clientfd[i] = connfd;
+        Rio_readinitb(&p->clientrio[i], connfd);
+        // 新的connfd加到读集合中
+        FD_SET(connfd, &p->read_set);
+        // 更新发现的最大的描述符
+        if (connfd > p->maxfd) {
+            p->maxfd = connfd;
+        }
+        // 更新客户端连接符池子中最大的水位
+        if (i > p->maxfd) {
+            p->maxi = i;
+        }
+        // 如果客户端连接描述符池子满了，就返回错误。
+        if (i == FD_SETSIZE) {
+            app_error("add_client error: Too many clients");
+        }
+    }
+}
+```
+
+## 2.2 基于I/O多路复用的并发服务器的优劣：
+
+优点：没有任务进程、线程调度引起的上下文切换的代价消耗，执行起来非常快，整个执行流实际是顺序的，容易调试。
+
+缺点是：编码复杂，尤其是控制逻辑粒度较低时。在上面的例子中，我们的粒度是服务端每次响应一行客户端的消息。当我们的服务器在执行读取一个文件行时，其他逻辑流就不可能有机会执行。这就很容易受到某些客户端恶意只发送一行文本行就停止的行为攻击。如果我们还要响应不同的客户端连接优先级，我们就需要加入更复杂的控制逻辑了。
+
+# 3. 基于线程的并发编程
+
+线程(thread)就是运行在进程上下文中的逻辑流。现代的操作系统几乎都允许我们在一个进程里同时运行多个线程，同时执行多个逻辑流，CPU基于线程来进行调度，而不是基于进程。
+
+每个线程都有它自己的线程上下文(thread context)，包括一个唯一的整数线程ID、栈、栈指针、程序计数器、通用目的寄存器和条件码。但是所有运行在一个进程中的线程共享该进程的整个虚拟地址空间。
+
+所以基于线程的并发程序有点像把上面介绍的进程与I/O多路复用的特点进行结合：1）线程的调用是内核自动调度的。2）同基于I/O多路复用一样，多个线程运行在单一的进程上下文中，共享这个进程的虚拟地址空间，包括代码、数据、堆、共享库和打开的文件。
+
+ 在一个进程刚开始运行时，只有一个线程，我们称为主线程。通过一些系统调用，我们可以创建一个对等线程(peer thread)。从这里开始，两个线程就并发地运行。在单核系统上，交替执行，在多核系统上可能并行执行。
+ 
+ 进程的上下文比进程简单，所以切换时来快得多。另外线程之间的关系不像进程那样有父子层次结构。线程之间往往是对等的。
+
+ ## Posix线程
+ 
+ Poxsix线程(Pthreads)是在C程序中处理线程的一个标准接口。在所有Linux系统上都可用。Pthreads定义了大约60个函数，支持在进程中创建、杀死、回收线程，与对等线程安全地共享数据（锁），还可以通知对等线程系统状态的变化（条件变量）。
+
+ 下面是使用多线程的一个简单的示例程序，主线程调用`pthread_create`创建了一个对等线程，然后等待线程结束。
+
+```cpp
+void *hello(void *vargp) {
+    printf("hello, world\n");
+}
+
+int main(int argc, char *argv[]) {
+    pthread_t tid;
+    Pthread_create(&tid, NULL, hello, NULL);
+    Pthread_join(tid, NULL);
+
+    return 0;
+}
+```
+
+下面我们看一下Threads中常见的API。
+
+```cpp
+#include <pthread.h>
+
+// 创建线程
+typedef void *(func)(void *);
+int pthread_create(pthread_t *tid, pthread_attr_t *attr,
+                   func *f, void*arg);
+
+// 线程内部获取本线程的线程id
+pthread_t pthread_self(void)
+
+// 线程退出
+void pthread_exit(void *thread_return);
+
+// 终止线程
+int pthread_cancal(pthread_t tid);
+
+// 回归已经终止的线程的资源
+int pthread_join(pthread_t tid, void **thread_return);
+
+// 分享线程
+int pthread_detach(pthread_t tid);
+
+// 初始化线程
+pthread_once_t once_control = PTHREAD_ONCE_INIT;
+int ptrhead_once(pthread_once_t *once_control, void (*init_routine)(void));
+```

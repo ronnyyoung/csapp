@@ -25,6 +25,7 @@ int byte_cnt = 0;
 
 void init_pool(int listenfd, pool* p);
 void add_client(int connfd, pool *p);
+void check_clients(pool *p);
 
 int main(int argc, char *argv[]) {
     int listenfd, connfd;
@@ -66,7 +67,8 @@ void  echo(int connfd) {
 
 void init_pool(int listenfd, pool* p) {
     p->maxi = -1;
-    for (int i = 0; i < FD_SETSIZE; i++) {
+    int i;
+    for (i = 0; i < FD_SETSIZE; i++) {
         p->clientfd[i] = -1;
     }
     p->maxfd = listenfd;
@@ -77,7 +79,8 @@ void init_pool(int listenfd, pool* p) {
 
 void add_client(int connfd, pool *p) {
     p->nready--;
-    for (int i = 0; i < FD_SETSIZE; i++) {
+    int i;
+    for (i = 0; i < FD_SETSIZE; i++) {
         if (p->clientfd[i] >=0 ) {
             continue;
         }
@@ -94,5 +97,28 @@ void add_client(int connfd, pool *p) {
         if (i == FD_SETSIZE) {
             app_error("add_client error: Too many clients");
         }
+    }
+}
+
+void check_clients(pool *p) {
+    int i = 0;
+    while(i < p->maxi && p->nready > 0) {
+        int connfd = p->clientfd[i];
+        if (connfd < 0 || !FD_ISSET(connfd, &p->ready_set)) {
+            i++;
+            continue;
+        }
+        char buf[MAXLINE];
+        ssize_t n = 0;
+        if ( (n = Rio_readlineb(&p->clientrio[i], buf, MAXLINE)) != 0) {
+            byte_cnt += n;
+            Rio_writen(connfd, buf, n);
+        } else {
+            p->clientfd[i] = -1;
+            FD_CLR(connfd, &p->read_set);
+            Close(connfd);
+        }
+        i++;
+        p->nready--;
     }
 }
